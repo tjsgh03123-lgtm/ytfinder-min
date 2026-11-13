@@ -1,0 +1,24 @@
+{
+  "regions": {
+    "KR": {"relevanceLanguage": "ko", "label": "한국"},
+    "US": {"relevanceLanguage": "en", "label": "미국"}
+  },
+  "categories": {
+    "22": "인물/블로그", "23": "코미디", "24": "엔터테인먼트", "10": "음악",
+    "17": "스포츠", "20": "게임", "26": "노하우/스타일", "27": "교육",
+    "28": "과학기술", "25": "뉴스/정치", "15": "동물", "19": "여행/이벤트"
+  },
+  "max_short_sec": 60,
+  "search_window_hours": 72,
+  "searches_per_run": 20,
+  "daily_search_call_budget": 90,
+  "daily_quota_budget": 9000,
+  "max_pool_channels": 3000,
+  "video_refresh_per_run": 400,
+  "video_refresh_stale_hours": 20,
+  "recent_videos_per_channel": 15,
+  "series_keep_points": 120,
+  "hidden_gem": {"max_subs": 50000, "min_ratio": 2.0},
+  "new_channel_days": 90,
+  "rpm_won_per_view": 0.175
+}
