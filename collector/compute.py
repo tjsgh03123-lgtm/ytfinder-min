@@ -139,7 +139,7 @@ def main():
             age_h = max((ts - v["pub"]) / 3600, 0.5)
             if age_h <= 14 * 24 and v["v"] >= 3000:
                 vid_out.append({
-                    "id": v["id"], "c": cid, "t": v["t"], "th": v["th"], "pub": v["pub"], "v": v["v"],
+                    "id": v["id"], "c": cid, "rg": m.get("region", "KR"), "t": v["t"], "th": v["th"], "pub": v["pub"], "v": v["v"],
                     "vph": round(v["v"] / age_h), "lk": v["l"], "d": v["d"],
                     "x": None if not subs else round(v["v"] / subs, 2),
                     "m": round(v["v"] / median_v, 1) if median_v else None,
@@ -161,11 +161,14 @@ def main():
              and v["m"] and v["m"] >= 3 and chans[v["c"]]["ok"]]
     shots = sorted(shots, key=lambda v: -v["m"])[:20]
 
-    daily = {}
+    # 날짜·국가별로 따로 상위 150개씩 (한쪽 국가가 다른 쪽을 밀어내지 않게)
+    daily, cnt = {}, {}
     for v in sorted(vid_out, key=lambda v: -v["v"]):
         d = dt.datetime.fromtimestamp(v["pub"], KST).strftime("%Y-%m-%d")
-        if len(daily.setdefault(d, [])) < 150:
-            daily[d].append(v)
+        k = (d, v["rg"])
+        if cnt.get(k, 0) < 150:
+            cnt[k] = cnt.get(k, 0) + 1
+            daily.setdefault(d, []).append(v)
 
     series_out = {}
     for cid in chans:

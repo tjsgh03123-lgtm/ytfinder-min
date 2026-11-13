@@ -48,6 +48,7 @@ th:first-child,td:first-child{text-align:left}th{color:var(--sub);font-weight:50
 .empty{color:var(--sub);padding:24px;text-align:center;border:1px dashed var(--line);border-radius:12px}
 footer{max-width:1200px;margin:30px auto;padding:0 14px;color:var(--sub);font-size:12px}
 a{color:var(--ac);text-decoration:none}
+.filters{position:sticky;top:0;z-index:5;background:var(--bg,#0e1116);padding:2px 0 4px;border-bottom:1px solid var(--line)}.filters .row{margin:6px 0}.card.vid .th{position:relative}.rk{position:absolute;left:6px;top:6px;background:#000a;color:#fff;font-weight:700;font-size:12px;border-radius:6px;padding:1px 7px}.fl{position:absolute;right:6px;top:6px;font-size:14px}
 </style>
 </head>
 <body>
@@ -78,8 +79,8 @@ const fmt=n=>n==null?'-':n>=1e8?(n/1e8).toFixed(1)+'억':n>=1e4?(n/1e4).toFixed(
 const won=n=>n==null?'-':'₩'+fmt(n);
 const pct=r=>r==null?'-':Math.round(r*100)+'%';
 const store={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let D,CH,DAILY,SERIES,KW=[],TAB='dash',wl=store.get('wl',{}),notes=store.get('notes',{}),bm=store.get('bm',{});
-const TABS=[['dash','대시보드'],['daily','데일리 떡상'],['explore','채널 탐색'],['kw','키워드'],['mine','내 활동']];
+let D,CH,DAILY,SERIES,KW=[],TAB='daily',wl=store.get('wl',{}),notes=store.get('notes',{}),bm=store.get('bm',{});
+const TABS=[['daily','🎬 영상 랭킹'],['dash','채널 대시보드'],['explore','채널 탐색'],['kw','키워드'],['mine','내 활동']];
 const fx=u=>fetch(u+'?t='+Date.now()).then(r=>{if(!r.ok)throw new Error(u);return r.json()});
 
 async function init(){
@@ -88,7 +89,7 @@ async function init(){
   catch(e){$('#s-dash').innerHTML='<div class="empty">아직 수집된 데이터가 없어요. GitHub Actions의 "collect"를 한 번 실행해 주세요.</div>';go('dash');return}
   const ago=Math.round((Date.now()/1000-D.generated)/3600);
   $('#meta').textContent=`채널 ${D.channels}개 · 갱신 ${ago<1?'방금':ago+'시간 전'} · 누적 ${D.history_days}일`;
-  renderAll();go(location.hash.slice(1)||'dash');
+  renderAll();go(location.hash.slice(1)||'daily');
 }
 function go(k){TAB=k;location.hash=k;document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id==='s-'+k));
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.k===k));window.scrollTo(0,0)}
@@ -103,7 +104,7 @@ function chCard(c,mode){
   <div><span class="pill ${c.r>=2?'g':''}">비율 ${pct(c.r)}</span><span class="pill">${mode==='d3'?'3일':'24h'} +${fmt(mode==='d3'?c.d3:c.d1)}${c.gsrc!=='실측'?'*':''}</span><span class="pill">월 ${won(c.rev)}</span></div></div>
   <button class="star ${on}" onclick="event.stopPropagation();toggleWl('${c.id}')">★</button></div>`;
 }
-function vidCard(v){
+function vidCard(v,rank){
   const c=CH[v.c]||{t:v.ct||''};const b=bm[v.id]?'on':'';
   const hot=v.v>=50000&&Date.now()/1000-v.pub<86400?'🔥 ':'';
   const q=encodeURIComponent(v.t);
@@ -111,7 +112,7 @@ function vidCard(v){
   const dup=v.dup>1?`<span class="pill w" title="같은 제목 영상이 여러 채널에서 올라옴 = 소스가 퍼지는 중">같은 소재 ${v.dup}곳</span>`:'';
   const who=CH[v.c]?`<a href="#" onclick="event.preventDefault();openCh('${v.c}')" style="font-size:12px">${esc(c.t)}</a>`:`<a target="_blank" href="https://www.youtube.com/channel/${esc(v.c)}" style="font-size:12px">${esc(c.t||'채널')}</a>`;
   return `<div class="card vid"><div class="th" onmouseenter="prev(this,'${v.id}')" onmouseleave="unprev(this)" onclick="window.open('https://www.youtube.com/shorts/${v.id}','_blank')">
-  <img loading="lazy" src="${esc(v.th)}" alt=""></div><div class="b"><div class="t">${hot}${esc(v.t)}</div>
+  <img loading="lazy" src="${esc(v.th)}" alt="">${rank?`<span class="rk">${rank}</span>`:''}<span class="fl">${(v.rg||c.rg)==='US'?'🇺🇸':(v.rg||c.rg)==='KR'?'🇰🇷':''}</span></div><div class="b"><div class="t">${hot}${esc(v.t)}</div>
   <div><span class="pill g">${fmt(v.v)}회</span><span class="pill">시간당 ${fmt(v.vph)}</span>${v.x!=null?`<span class="pill ${v.x>=2?'g':''}">구독대비 ${pct(v.x)}</span>`:''}${v.m?`<span class="pill ${v.m>=3?'w':''}">평소 ${v.m}배</span>`:''}${dup}${rh}</div>
   <div style="display:flex;justify-content:space-between;align-items:center">${who}
   <button class="star ${b}" title="벤치마킹 저장" onclick="toggleBm('${v.id}',this)">🔖</button></div>
@@ -146,21 +147,25 @@ function diag(){
   $('#diag').innerHTML=hit.length?`<div class="cgrid">${hit.map(chCard).join('')}</div>`:'<div class="empty">수집 풀에 없는 채널이에요. 다음 수집에서 발굴돼야 보여요.</div>';
 }
 
-// ---------- 데일리 떡상 ----------
-let dState={date:null,lens:'v',cut:0};
+// ---------- 영상 랭킹 (한국/미국에서 뜬 쇼츠) ----------
+let dState=Object.assign({rg:'ALL',days:1,lens:'v',cut:0,short:true},store.get('dstate',{}));
 function renderDaily(){
-  const dates=Object.keys(DAILY).sort().reverse();if(!dates.length){$('#s-daily').innerHTML='<div class="empty">영상 데이터 없음</div>';return}
-  dState.date=dState.date||dates[0];
-  const lens=[['v','조회수순'],['vph','지금 뜨는 중'],['x','구독 대비 폭발'],['new','신생 채널']];
-  let list=(DAILY[dState.date]||[]).filter(v=>v.v>=dState.cut);
-  if(dState.lens==='new')list=list.filter(v=>CH[v.c]?.age!=null&&CH[v.c].age<=D.newDays);
-  const key={v:'v',vph:'vph',x:'x',new:'v'}[dState.lens];list=[...list].sort((a,b)=>(b[key]||0)-(a[key]||0)).slice(0,90);
-  $('#s-daily').innerHTML=`<div class="row">${dates.map(d=>`<button class="ghost ${d===dState.date?'on':''}" onclick="dState.date='${d}';renderDaily()">${d.slice(5)}</button>`).join('')}</div>
-  <div class="row">${lens.map(([k,n])=>`<button class="ghost ${dState.lens===k?'on':''}" onclick="dState.lens='${k}';renderDaily()">${n}</button>`).join('')}
-  <select onchange="dState.cut=+this.value;renderDaily()">${[[0,'조회수 전체'],[10000,'1만+'],[100000,'10만+'],[500000,'50만+']].map(([v,n])=>`<option value="${v}" ${dState.cut===v?'selected':''}>${n}</option>`).join('')}</select></div>
-  <p class="hint">날짜는 한국시간 발행일 기준 · 🔥 = 24시간 내 5만 조회 돌파 · 썸네일에 마우스를 올리면 미리보기 재생</p>
-  ${list.length?`<div class="grid">${list.map(vidCard).join('')}</div>`:'<div class="empty">조건에 맞는 영상 없음</div>'}`;
+  const ref=D.generated||Date.now()/1000;
+  const RG=[['ALL','전체'],['KR','🇰🇷 한국'],['US','🇺🇸 미국']],DAYS=[[1,'24시간'],[3,'3일'],[7,'7일'],[14,'14일']];
+  const lens=[['v','조회수순'],['vph','지금 뜨는 중'],['x','구독 대비 폭발'],['m','평소 대비 터짐']];
+  let list=allVids().filter(v=>ref-v.pub<=dState.days*86400+3600&&v.v>=dState.cut&&(dState.rg==='ALL'||(v.rg||CH[v.c]?.rg)===dState.rg));
+  const seen=new Set();list=list.filter(v=>!seen.has(v.id)&&seen.add(v.id));
+  const total=list.length;
+  const key=dState.lens;list=[...list].sort((a,b)=>(b[key]||0)-(a[key]||0)).slice(0,60);
+  const btn=(arr,cur,fn)=>arr.map(([k,n])=>`<button class="ghost ${String(cur)===String(k)?'on':''}" onclick="${fn}(${typeof k==='number'?k:`'${k}'`})">${n}</button>`).join('');
+  $('#s-daily').innerHTML=`<div class="filters">
+  <div class="row">${btn(RG,dState.rg,'setD.bind(null,\'rg\')')}</div>
+  <div class="row">${btn(DAYS,dState.days,'setD.bind(null,\'days\')')}<select onchange="setD('cut',+this.value)">${[[0,'조회수 전체'],[10000,'1만+'],[100000,'10만+'],[500000,'50만+'],[1000000,'100만+']].map(([v,n])=>`<option value="${v}" ${dState.cut===v?'selected':''}>${n}</option>`).join('')}</select></div>
+  <div class="row">${btn(lens,dState.lens,'setD.bind(null,\'lens\')')}</div></div>
+  <p class="hint">${RG.find(r=>r[0]===dState.rg)[1]} · 최근 ${DAYS.find(d=>d[0]===dState.days)[1]}에 올라온 쇼츠 ${total}개 중 상위 ${list.length}개 · 🔥 = 24시간 내 5만 조회 돌파 · 썸네일 위에 마우스를 올리면 미리보기</p>
+  ${list.length?`<div class="grid">${list.map((v,i)=>vidCard(v,i+1)).join('')}</div>`:'<div class="empty">조건에 맞는 영상이 없어요. 기간을 늘리거나 조회수 조건을 낮춰 보세요. (수집 초기에는 영상이 적습니다)</div>'}`;
 }
+function setD(k,v){dState[k]=v;store.set('dstate',dState);renderDaily();window.scrollTo(0,0)}
 
 // ---------- 채널 탐색 ----------
 let eState={q:'',norh:false,rg:'',g:'',minS:'',maxS:'',minRev:'',hid:false,nw:false,act:false,sort:'honey',dir:-1};
