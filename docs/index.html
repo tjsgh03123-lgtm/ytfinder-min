@@ -60,15 +60,17 @@ a{color:var(--ac);text-decoration:none}
 <section id="s-dash"></section>
 <section id="s-daily"></section>
 <section id="s-explore"></section>
+<section id="s-kw"></section>
 <section id="s-mine"></section>
 </main>
+<div id="toast" style="position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#222a35;color:var(--tx);padding:8px 14px;border-radius:99px;display:none;z-index:30;font-size:13px"></div>
 <div id="modal" onclick="if(event.target===this)closeModal()"><div class="box" id="mbox"></div></div>
 <footer>
 <b>지표 설명</b> · 조회/구독 비율 = 채널 영상 조회수 <u>중앙값</u> ÷ 구독자(영상 하나가 터진 채널의 착시를 줄임) ·
 꿀통 지수(0~100) = 월 예상 수익 로그 스케일 40 + 비율 35 + 업로드 꾸준함 25 ·
 떡상 지수(0~100) = 비율 40 + 일 조회수 증가 40 + 최근 7일 업로드 20 ·
 월 예상 수익은 조회수 × 고정 단가 가정값이라 <u>채널 간 비교용</u>입니다 ·
-데이터 이력이 짧은 동안 급상승은 "영상기반 추정"으로 표시됩니다.
+데이터 이력이 짧은 동안 급상승은 "영상기반 추정"으로 표시됩니다 · <b>⚠ 권리자</b>는 채널 이름(방송사·공식·스포츠리그 등) 기반 휴리스틱일 뿐 권리 판단이 아니며, <b>같은 소재 N곳</b>은 제목이 같은 영상이 여러 채널에 있다는 뜻입니다. 원본 크레딧이 있다고 사용 허락이 있는 것은 아닙니다.
 </footer>
 <script>
 const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -76,13 +78,13 @@ const fmt=n=>n==null?'-':n>=1e8?(n/1e8).toFixed(1)+'억':n>=1e4?(n/1e4).toFixed(
 const won=n=>n==null?'-':'₩'+fmt(n);
 const pct=r=>r==null?'-':Math.round(r*100)+'%';
 const store={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let D,CH,DAILY,SERIES,TAB='dash',wl=store.get('wl',{}),notes=store.get('notes',{}),bm=store.get('bm',{});
-const TABS=[['dash','대시보드'],['daily','데일리 떡상'],['explore','채널 탐색'],['mine','내 활동']];
+let D,CH,DAILY,SERIES,KW=[],TAB='dash',wl=store.get('wl',{}),notes=store.get('notes',{}),bm=store.get('bm',{});
+const TABS=[['dash','대시보드'],['daily','데일리 떡상'],['explore','채널 탐색'],['kw','키워드'],['mine','내 활동']];
 const fx=u=>fetch(u+'?t='+Date.now()).then(r=>{if(!r.ok)throw new Error(u);return r.json()});
 
 async function init(){
   $('#tabs').innerHTML=TABS.map(([k,n])=>`<button data-k="${k}" onclick="go('${k}')">${n}</button>`).join('');
-  try{[D,CH,DAILY]=await Promise.all([fx('data/dashboard.json'),fx('data/channels.json'),fx('data/daily.json')])}
+  try{[D,CH,DAILY]=await Promise.all([fx('data/dashboard.json'),fx('data/channels.json'),fx('data/daily.json')]);KW=await fx('data/kw.json').catch(()=>[])}
   catch(e){$('#s-dash').innerHTML='<div class="empty">아직 수집된 데이터가 없어요. GitHub Actions의 "collect"를 한 번 실행해 주세요.</div>';go('dash');return}
   const ago=Math.round((Date.now()/1000-D.generated)/3600);
   $('#meta').textContent=`채널 ${D.channels}개 · 갱신 ${ago<1?'방금':ago+'시간 전'} · 누적 ${D.history_days}일`;
@@ -90,29 +92,37 @@ async function init(){
 }
 function go(k){TAB=k;location.hash=k;document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id==='s-'+k));
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.k===k));window.scrollTo(0,0)}
-function renderAll(){renderDash();renderDaily();renderExplore();renderMine()}
+function renderAll(){renderDash();renderDaily();renderExplore();renderKw();renderMine()}
 
 // ---------- 공통 조각 ----------
 function chCard(c,mode){
   const on=wl[c.id]?'on':'';
   return `<div class="card ch" onclick="openCh('${c.id}')"><img src="${esc(c.th)}" loading="lazy" onerror="this.style.visibility='hidden'">
   <div class="i"><div class="n">${esc(c.t)}</div>
-  <div><span class="badge ${c.g}">${c.g}</span><span class="pill">${c.rg}</span><span class="pill">구독 ${fmt(c.s)}</span></div>
+  <div><span class="badge ${c.g}">${c.g}</span><span class="pill">${c.rg}</span><span class="pill">구독 ${fmt(c.s)}</span>${c.rh?'<span class="pill r" title="이름 기준 휴리스틱">⚠ 권리자</span>':''}</div>
   <div><span class="pill ${c.r>=2?'g':''}">비율 ${pct(c.r)}</span><span class="pill">${mode==='d3'?'3일':'24h'} +${fmt(mode==='d3'?c.d3:c.d1)}${c.gsrc!=='실측'?'*':''}</span><span class="pill">월 ${won(c.rev)}</span></div></div>
   <button class="star ${on}" onclick="event.stopPropagation();toggleWl('${c.id}')">★</button></div>`;
 }
 function vidCard(v){
-  const c=CH[v.c]||{};const b=bm[v.id]?'on':'';
+  const c=CH[v.c]||{t:v.ct||''};const b=bm[v.id]?'on':'';
   const hot=v.v>=50000&&Date.now()/1000-v.pub<86400?'🔥 ':'';
+  const q=encodeURIComponent(v.t);
+  const rh=c.rh?`<span class="pill r" title="채널 이름 기준 휴리스틱입니다. 실제 권리 여부는 직접 확인하세요">⚠ 권리자 가능성</span>`:'';
+  const dup=v.dup>1?`<span class="pill w" title="같은 제목 영상이 여러 채널에서 올라옴 = 소스가 퍼지는 중">같은 소재 ${v.dup}곳</span>`:'';
+  const who=CH[v.c]?`<a href="#" onclick="event.preventDefault();openCh('${v.c}')" style="font-size:12px">${esc(c.t)}</a>`:`<a target="_blank" href="https://www.youtube.com/channel/${esc(v.c)}" style="font-size:12px">${esc(c.t||'채널')}</a>`;
   return `<div class="card vid"><div class="th" onmouseenter="prev(this,'${v.id}')" onmouseleave="unprev(this)" onclick="window.open('https://www.youtube.com/shorts/${v.id}','_blank')">
   <img loading="lazy" src="${esc(v.th)}" alt=""></div><div class="b"><div class="t">${hot}${esc(v.t)}</div>
-  <div><span class="pill g">${fmt(v.v)}회</span><span class="pill">시간당 ${fmt(v.vph)}</span>${v.x!=null?`<span class="pill ${v.x>=2?'g':''}">구독대비 ${pct(v.x)}</span>`:''}${v.m?`<span class="pill ${v.m>=3?'w':''}">평소 ${v.m}배</span>`:''}</div>
-  <div style="display:flex;justify-content:space-between;align-items:center"><a href="#" onclick="event.preventDefault();openCh('${v.c}')" style="font-size:12px">${esc(c.t||'')}</a>
-  <button class="star ${b}" title="벤치마킹 저장" onclick="toggleBm('${v.id}',this)">🔖</button></div></div></div>`;
+  <div><span class="pill g">${fmt(v.v)}회</span><span class="pill">시간당 ${fmt(v.vph)}</span>${v.x!=null?`<span class="pill ${v.x>=2?'g':''}">구독대비 ${pct(v.x)}</span>`:''}${v.m?`<span class="pill ${v.m>=3?'w':''}">평소 ${v.m}배</span>`:''}${dup}${rh}</div>
+  <div style="display:flex;justify-content:space-between;align-items:center">${who}
+  <button class="star ${b}" title="벤치마킹 저장" onclick="toggleBm('${v.id}',this)">🔖</button></div>
+  <div class="hint" style="margin:2px 0 0">원본 찾기: <a target="_blank" href="https://lens.google.com/uploadbyurl?url=${encodeURIComponent(v.th)}">렌즈</a> · <a target="_blank" href="https://www.youtube.com/results?search_query=${q}">유튜브</a> · <a target="_blank" href="https://www.google.com/search?q=${q}">구글</a> · <a target="_blank" href="https://www.tiktok.com/search?q=${q}">틱톡</a></div></div></div>`;
 }
 let pt;function prev(el,id){pt=setTimeout(()=>{if(el.querySelector('iframe'))return;const f=document.createElement('iframe');
   f.allow='autoplay';f.src=`https://www.youtube.com/embed/${id}?autoplay=1&mute=1&controls=0&loop=1&playlist=${id}&playsinline=1`;f.style.pointerEvents='none';el.appendChild(f)},350)}
 function unprev(el){clearTimeout(pt);el.querySelector('iframe')?.remove()}
+const toast=m=>{const t=$('#toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',1800)};
+const copyTxt=t=>{(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('복사됨'),()=>prompt('복사하세요',t))};
+const repoUrl=()=>{const u=location.hostname.endsWith('.github.io')?location.hostname.split('.')[0]:'tjsgh03123-lgtm';const r=location.pathname.split('/')[1]||'ytfinder-min';return `https://github.com/${u}/${r}/actions/workflows/collect.yml`};
 const byId=ids=>ids.map(i=>CH[i]).filter(Boolean);
 const allVids=()=>Object.values(DAILY).flat();
 
@@ -153,9 +163,11 @@ function renderDaily(){
 }
 
 // ---------- 채널 탐색 ----------
-let eState={rg:'',g:'',minS:'',maxS:'',minRev:'',hid:false,nw:false,act:false,sort:'honey',dir:-1};
+let eState={q:'',norh:false,rg:'',g:'',minS:'',maxS:'',minRev:'',hid:false,nw:false,act:false,sort:'honey',dir:-1};
 function renderExplore(){
   const f=eState;let list=Object.values(CH).filter(c=>c.ok);
+  if(f.q){const k=f.q.toLowerCase();list=list.filter(c=>(c.t+' '+(c.h||'')).toLowerCase().includes(k))}
+  if(f.norh)list=list.filter(c=>!c.rh);
   if(f.rg)list=list.filter(c=>c.rg===f.rg);
   if(f.g)list=list.filter(c=>c.honey>={SSS:80,SS:60,S:40,A:20}[f.g]);
   if(f.minS!=='')list=list.filter(c=>c.s>=+f.minS);if(f.maxS!=='')list=list.filter(c=>c.s<=+f.maxS);
@@ -164,7 +176,7 @@ function renderExplore(){
   if(f.nw)list=list.filter(c=>c.age!=null&&c.age<=D.newDays);if(f.act)list=list.filter(c=>c.up7>=3);
   list.sort((a,b)=>f.dir*((a[f.sort]??-1)-(b[f.sort]??-1)));
   const th=(k,n)=>`<th onclick="eState.dir=eState.sort==='${k}'?-eState.dir:-1;eState.sort='${k}';renderExplore()">${n}${f.sort===k?(f.dir<0?' ▼':' ▲'):''}</th>`;
-  $('#s-explore').innerHTML=`<div class="row">
+  $('#s-explore').innerHTML=`<div class="row"><input placeholder="채널명/@핸들 검색" value="${esc(f.q)}" style="min-width:160px" onchange="eState.q=this.value;renderExplore()">
   <select onchange="eState.rg=this.value;renderExplore()"><option value="">전체 국가</option>${Object.entries(D.regions).map(([k,n])=>`<option value="${k}" ${f.rg===k?'selected':''}>${n}</option>`).join('')}</select>
   <select onchange="eState.g=this.value;renderExplore()"><option value="">꿀통 등급</option>${['S','SS','SSS'].map(g=>`<option ${f.g===g?'selected':''}>${g}</option>`).join('')}</select>
   <input type="number" placeholder="최소 구독" value="${f.minS}" onchange="eState.minS=this.value;renderExplore()">
@@ -172,10 +184,38 @@ function renderExplore(){
   <input type="number" placeholder="최소 월수익(원)" value="${f.minRev}" onchange="eState.minRev=this.value;renderExplore()">
   <button class="ghost ${f.hid?'on':''}" onclick="eState.hid=!eState.hid;renderExplore()">히든 젬</button>
   <button class="ghost ${f.nw?'on':''}" onclick="eState.nw=!eState.nw;renderExplore()">신생</button>
-  <button class="ghost ${f.act?'on':''}" onclick="eState.act=!eState.act;renderExplore()">활동 중</button></div>
+  <button class="ghost ${f.act?'on':''}" onclick="eState.act=!eState.act;renderExplore()">활동 중</button>
+  <button class="ghost ${f.norh?'on':''}" onclick="eState.norh=!eState.norh;renderExplore()" title="방송사/공식 채널로 보이는 이름 제외">⚠ 권리자 제외</button></div>
   <p class="hint">${list.length}개 중 상위 150개 · 헤더를 누르면 정렬 · 영상 3개 미만이거나 구독자 비공개 채널은 제외</p>
   <div class="tw"><table><tr><th>채널</th>${th('s','구독')}${th('r','비율')}${th('honey','꿀통')}${th('hot','떡상')}${th('d1','24h↑')}${th('rev','월수익')}${th('up30','30일 업로드')}${th('age','나이(일)')}</tr>
   ${list.slice(0,150).map(c=>`<tr class="click" onclick="openCh('${c.id}')"><td>${wl[c.id]?'★ ':''}${esc(c.t)} <span class="pill">${c.rg}</span></td><td>${fmt(c.s)}</td><td>${pct(c.r)}</td><td><span class="badge ${c.g}">${c.g}</span>${c.honey}</td><td>${c.hot}</td><td>${fmt(c.d1)}${c.gsrc!=='실측'?'*':''}</td><td>${won(c.rev)}</td><td>${c.up30}</td><td>${c.age??'-'}</td></tr>`).join('')}</table></div>`;
+}
+
+// ---------- 키워드 ----------
+let kState={q:'',i:0};
+function kwAgo(ts){const h=Math.round((Date.now()/1000-ts)/3600);return h<1?'방금':h<48?h+'시간 전':Math.round(h/24)+'일 전'}
+function renderKw(){
+  const toks=kState.q.trim().toLowerCase().split(/\s+/).filter(Boolean);const m=t=>toks.every(k=>t.toLowerCase().includes(k));
+  let local='';
+  if(toks.length){
+    const vids=allVids().filter(v=>m(v.t+' '+(CH[v.c]?.t||''))).sort((a,b)=>b.v-a.v).slice(0,40);
+    const chs=Object.values(CH).filter(c=>m(c.t+' '+(c.h||''))).sort((a,b)=>b.honey-a.honey).slice(0,9);
+    local=`<h2>수집 데이터에서 찾은 결과<small>영상 ${vids.length} · 채널 ${chs.length}</small></h2>`+
+      (chs.length?`<div class="cgrid">${chs.map(chCard).join('')}</div>`:'')+
+      (vids.length?`<div class="grid" style="margin-top:10px">${vids.map(vidCard).join('')}</div>`:'<div class="empty">수집된 데이터에는 없어요. 아래 "새로 검색"으로 YouTube에서 직접 찾아보세요.</div>');
+  }
+  const e=KW[kState.i];
+  const chips=KW.map((x,i)=>`<button class="ghost ${i===kState.i?'on':''}" onclick="kState.i=${i};renderKw()">${x.kind==='ch'?'📺 ':'🔎 '}${esc(x.q)}${x.kind==='kw'?` · ${esc(x.region)} · ${x.days?x.days+'일':'전체'}`:' 인기순'}</button>`).join('');
+  const saved=KW.length?`<h2>저장된 검색 결과<small>${KW.length}건</small></h2><div class="row">${chips}</div>`+
+    (e?`<p class="hint">${e.kind==='ch'?'채널 인기순 상위 쇼츠':'키워드 조회수순'} · ${kwAgo(e.ts)} 검색 · ${e.items.length}개</p>${e.items.length?`<div class="grid">${e.items.map(vidCard).join('')}</div>`:'<div class="empty">결과 없음</div>'}`:''):'<h2>저장된 검색 결과</h2><div class="empty">아직 없어요. 아래에서 새로 검색하면 여기에 쌓입니다.</div>';
+  $('#s-kw').innerHTML=`<h2>키워드 검색</h2><p class="hint">공백으로 여러 단어를 넣으면 모두 포함된 것만 찾습니다. 제목·채널명 기준.</p>
+  <div class="row"><input id="kq" value="${esc(kState.q)}" placeholder="예: baseball, 야구, 고양이" style="flex:1;min-width:200px" onkeydown="if(event.key==='Enter'){kState.q=this.value;renderKw()}"><button class="btn" onclick="kState.q=$('#kq').value;renderKw()">찾기</button></div>
+  ${local}
+  <h2>새로 검색<small>YouTube에서 직접</small></h2>
+  <div class="card" style="padding:12px"><p class="hint" style="margin:0 0 8px">API 키 보호를 위해 검색은 GitHub Actions에서 실행됩니다. (1~2분 뒤 새로고침하면 위 "저장된 검색 결과"에 나타남)</p>
+  <ol class="hint" style="margin:0 0 10px;padding-left:18px"><li>아래 버튼으로 키워드를 복사하고 Actions 페이지를 엽니다.</li><li><b>Run workflow</b> → keyword 칸에 붙여넣기 → region·days 선택 → 실행</li><li>채널 인기순은 channel 칸에 채널 ID나 @핸들을 넣습니다.</li></ol>
+  <div class="row"><button class="ghost" onclick="copyTxt($('#kq').value||'')">키워드 복사</button><a class="ghost btn" style="text-decoration:none" target="_blank" href="${repoUrl()}">Actions 열기 →</a></div>
+  <p class="hint" style="margin:8px 0 0">하루 검색 호출 한도(약 100회)를 정기 수집과 나눠 쓰니 하루 10~20번 안쪽으로 쓰세요.</p></div>`;
 }
 
 // ---------- 내 활동 ----------
@@ -207,6 +247,8 @@ async function openCh(id){
   <div><small>24h 조회 증가${c.gsrc!=='실측'?'(추정)':''}</small>+${fmt(c.d1)}</div><div><small>30일 업로드</small>${c.up30}개</div><div><small>채널 나이</small>${c.age??'-'}일</div></div>
   <b>성장 펄스</b><div id="spark" style="margin:6px 0 14px">${spark(pts)}</div>
   <b>메모</b><textarea oninput="notes['${id}']=this.value;store.set('notes',notes)" placeholder="예: 편집 스타일 참고">${esc(notes[id]||'')}</textarea>
+  <h2 style="margin-top:14px">인기순 상위 영상<small>레퍼런스 채널 딥다이브</small></h2>
+  ${(()=>{const e=KW.find(x=>x.key==='ch:'+id);return e?`<p class="hint">${kwAgo(e.ts)} 검색</p><div class="grid">${e.items.slice(0,12).map(vidCard).join('')}</div>`:`<p class="hint">최신 영상은 조용해도 인기순에는 터진 소스가 있을 수 있어요. 채널 ID를 복사해 Actions의 channel 칸에 넣으면 여기에 표시됩니다.</p><div class="row"><button class="ghost" onclick="copyTxt('${id}')">채널 ID 복사</button><a class="ghost btn" style="text-decoration:none" target="_blank" href="${repoUrl()}">Actions 열기 →</a></div>`})()}
   <h2 style="margin-top:14px">최근 영상</h2>${vids.length?`<div class="grid">${vids.map(vidCard).join('')}</div>`:'<div class="empty">3천 조회 이상 영상 없음</div>'}`;
   $('#modal').style.display='block';
 }

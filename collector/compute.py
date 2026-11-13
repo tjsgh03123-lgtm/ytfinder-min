@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """수집된 시계열/영상 데이터로 지표를 계산해 docs/data/*.json 생성."""
-import json, os, math, statistics as stt, time, datetime as dt
+import json, os, re, math, statistics as stt, time, datetime as dt
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data")
@@ -48,6 +48,12 @@ def views_delta(pts, ts, window):
     return (pts[-1][2] - base[2]) * (window / span)
 
 
+def norm_title(t):
+    """같은 소재 판별용 제목 정규화: 해시태그/기호/공백 제거, 소문자."""
+    t = re.sub(r"#\S+", " ", t.lower())
+    return re.sub(r"[^0-9a-z가-힣ぁ-んァ-ン一-龥]", "", t)
+
+
 def main():
     ts = int(time.time())
     meta = load("channels.json", {})
@@ -56,6 +62,14 @@ def main():
     rpm = CFG["rpm_won_per_view"]
     hg = CFG["hidden_gem"]
     chans, vid_out = {}, []
+    hints = [h.lower() for h in CFG.get("rights_holder_hints", [])]
+    # 같은 소재(제목)가 서로 다른 채널에서 몇 곳 올라왔는지: 퍼지는 중인 소스 신호
+    owners = {}
+    for cid, ent in videos.items():
+        for v in ent.get("items", []):
+            k = norm_title(v["t"])
+            if len(k) >= 8:
+                owners.setdefault(k, set()).add(cid)
 
     for cid, m in meta.items():
         pts = series.get(cid, [])
@@ -117,6 +131,8 @@ def main():
             "honey": honey, "g": grade(honey), "hot": hot,
             "d1": round(d1), "d3": round(d3), "gsrc": grow_src, "sd7": subs_d7,
             "ok": confident, "pts": len(pts),
+            # 방송사/공식 채널로 보이는지 (이름 휴리스틱일 뿐, 권리 판단이 아님)
+            "rh": any(h in m["title"].lower() for h in hints),
         }
         # 영상 피드 (14일 이내, 조회수 3천 이상만 저장해 용량 제한)
         for v in items:
@@ -127,6 +143,7 @@ def main():
                     "vph": round(v["v"] / age_h), "lk": v["l"], "d": v["d"],
                     "x": None if not subs else round(v["v"] / subs, 2),
                     "m": round(v["v"] / median_v, 1) if median_v else None,
+                    "dup": len(owners.get(norm_title(v["t"]), ())) if len(norm_title(v["t"])) >= 8 else 0,
                 })
 
     ok = [c for c in chans.values() if c["ok"]]

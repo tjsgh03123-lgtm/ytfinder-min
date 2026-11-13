@@ -245,6 +245,7 @@ def main():
     try:
         # 단계별로 따로 보호: 앞 단계가 예산 때문에 멈춰도 뒤 단계(싼 호출)는 시도한다
         for name, fn in (("발굴", lambda: seed.extend(discover(quota, pool, run_idx))),
+                         ("키워드추적", lambda: __import__("kwsearch").track(quota, pool, run_idx)),
                          ("스냅샷", lambda: snapshot_channels(quota, pool, series, meta)),
                          ("영상갱신", lambda: refresh_videos(quota, pool, meta, videos, seed))):
             try:
@@ -263,4 +264,5 @@ def main():
 
 
 if __name__ == "__main__":
+    sys.modules.setdefault("collect", sys.modules[__name__])  # kwsearch 가 같은 모듈(같은 예외 클래스)을 쓰게 한다
     main()

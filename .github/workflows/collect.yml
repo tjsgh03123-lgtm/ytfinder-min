@@ -3,6 +3,25 @@ on:
   schedule:
     - cron: "17 */6 * * *"   # 하루 4회 (UTC 0/6/12/18시 17분)
   workflow_dispatch:
+    inputs:
+      keyword:
+        description: "키워드 검색 (비우면 일반 수집)"
+        required: false
+        default: ""
+      region:
+        description: "키워드 검색 국가"
+        type: choice
+        options: ["ALL", "KR", "US"]
+        default: "ALL"
+      days:
+        description: "키워드 검색 기간(일, 0=전체)"
+        type: choice
+        options: ["30", "7", "90", "365", "0"]
+        default: "30"
+      channel:
+        description: "채널 인기순 보기: 채널 ID(UC...) 또는 @핸들"
+        required: false
+        default: ""
 permissions:
   contents: write
   pages: write
@@ -20,10 +39,21 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - name: 수집
+      - name: 수집 (정기 실행 또는 입력이 없는 수동 실행)
+        if: ${{ github.event.inputs.keyword == '' && github.event.inputs.channel == '' }}
         env:
           YT_API_KEY: ${{ secrets.YT_API_KEY }}
         run: python collector/collect.py
+      - name: 키워드/채널 검색 (수동 입력이 있을 때만)
+        if: ${{ github.event.inputs.keyword != '' || github.event.inputs.channel != '' }}
+        env:
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
+          # 입력값은 셸에 직접 끼워 넣지 않고 환경변수로만 전달한다 (명령어 주입 방지)
+          KW: ${{ github.event.inputs.keyword }}
+          KW_REGION: ${{ github.event.inputs.region }}
+          KW_DAYS: ${{ github.event.inputs.days }}
+          KW_CHANNEL: ${{ github.event.inputs.channel }}
+        run: python collector/kwsearch.py
       - name: 지표 계산
         run: python collector/compute.py
       - name: 데이터 커밋
