@@ -140,7 +140,7 @@ def discover(quota, pool, run_idx):
         try:
             r = call(quota, "search", {
                 "part": "snippet", "type": "video", "videoDuration": "short", "order": "viewCount",
-                "q": "#shorts", "videoCategoryId": cat, "regionCode": rc,
+                "q": CFG["regions"][rc].get("query", "#shorts"), "videoCategoryId": cat, "regionCode": rc,
                 "relevanceLanguage": CFG["regions"][rc]["relevanceLanguage"],
                 "publishedAfter": after, "maxResults": 50})
         except QuotaStop as e:  # 검색 예산이 끝나도 스냅샷/영상 갱신은 계속 진행해야 한다
@@ -177,6 +177,27 @@ def discover(quota, pool, run_idx):
     return rows
 
 
+# ---------- 국가 판별 ----------
+import re as _re
+_HANGUL = _re.compile(r"[\uac00-\ud7a3]")
+
+
+def classify_region(sn):
+    """채널의 실제 국가를 KR/US로 판별. 검색 regionCode는 신뢰할 수 없어 쓰지 않는다.
+    확실하지 않으면 None(제외): 인도·인니 등 다른 나라 채널이 섞이는 것보다 놓치는 쪽이 낫다."""
+    country = (sn.get("country") or "").upper()
+    lang = (sn.get("defaultLanguage") or "").lower()
+    if country in ("KR", "US"):
+        return country
+    if country:
+        return None
+    if _HANGUL.search(sn.get("title", "")) or lang.startswith("ko"):
+        return "KR"
+    if lang in ("en", "en-us"):
+        return "US"
+    return None
+
+
 # ---------- 2) 채널 스냅샷 ----------
 def snapshot_channels(quota, pool, series, meta):
     ts = now_ts()
@@ -195,13 +216,17 @@ def snapshot_channels(quota, pool, series, meta):
             vids = int(st.get("videoCount", 0))
             series.setdefault(cid, []).append([ts, subs, views, vids])
             series[cid] = series[cid][-keep:]
+            rgn = classify_region(sn)
+            if rgn is None:  # 한국/미국 채널이 아니면 풀과 기록에서 제거
+                pool.pop(cid, None); meta.pop(cid, None); series.pop(cid, None)
+                continue
             th = sn.get("thumbnails", {})
             meta[cid] = {
                 "title": sn.get("title", ""), "handle": sn.get("customUrl", ""),
                 "thumb": (th.get("default") or {}).get("url", ""),
                 "country": sn.get("country", ""), "created": parse_ts(sn["publishedAt"]) if sn.get("publishedAt") else 0,
                 "uploads": ch.get("contentDetails", {}).get("relatedPlaylists", {}).get("uploads", ""),
-                "hidden_subs": hidden, "region": pool[cid].get("region", "KR"),
+                "hidden_subs": hidden, "region": rgn,
             }
         for cid in batch:  # 삭제/비공개된 채널은 풀에서 제거
             if cid not in seen:

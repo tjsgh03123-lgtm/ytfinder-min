@@ -2,6 +2,7 @@
   "regions": {
     "KR": {
       "relevanceLanguage": "ko",
+      "query": "#쇼츠",
       "label": "한국"
     },
     "US": {
